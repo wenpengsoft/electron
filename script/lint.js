@@ -41,6 +41,28 @@ function spawnAndCheckExitCode (cmd, args, opts) {
   if (status) process.exit(status)
 }
 
+function gnCheckConfig (config, env) {
+  const outDir = path.resolve(SOURCE_ROOT, '.gn-lint-cache', config)
+  const args = ['gen', outDir]
+  if (!fs.existsSync(outDir)) {
+    args.push(`--args=import("//electron/build/args/${config}.gn")`)
+  }
+  let result = childProcess.spawnSync('gn', args, { env, stdio: 'inherit' })
+  if (result.status === 0) {
+    const args = ['check', outDir, '//electron:electron_lib']
+    result = childProcess.spawnSync('gn', args, { env, stdio: 'inherit' })
+    if (result.status) {
+      console.log(`Error running 'gn ${args.join(' ')}'`)
+    }
+  } else {
+    console.log(`Error running 'gn ${args.join(' ')}'`)
+  }
+
+  if (result.status) {
+    process.exit(result.status)
+  }
+}
+
 const LINTERS = [ {
   key: 'c++',
   roots: ['atom'],
@@ -123,31 +145,10 @@ const LINTERS = [ {
     }, process.env)
     // Users may not have depot_tools in PATH.
     env.PATH = `${env.PATH}${path.delimiter}${DEPOT_TOOLS}`
-    const outDir = path.resolve(SOURCE_ROOT, '..', 'out', 'CheckTesting' + Date.now())
-    const args = ['gen', outDir]
-    args.push('--args=\'import("//electron/build/args/testing.gn")\'')
-
-    let result = childProcess.spawnSync('gn', args, { env, stdio: 'inherit', shell: true })
-    if (result.status === 0) {
-      const args = ['check', outDir, '//electron:electron_lib']
-      result = childProcess.spawnSync('gn', args, { env, stdio: 'inherit', shell: true })
-      if (result.status) {
-        console.log(`Error running 'gn ${args.join(' ')}'`)
-      }
-    } else {
-      console.log(`Error running 'gn ${args.join(' ')}'`)
-    }
-
-    fs.remove(outDir)
-      .then(() => {
-        if (result.status) {
-          process.exit(result.status)
-        }
-      })
-      .catch(() => {
-        console.log(`Unable to remove temp directory: ${outDir}`)
-        process.exit(1)
-      })
+    console.log('Running gn check for testing builds...')
+    gnCheckConfig('testing', env)
+    console.log('Running gn check for debug builds...')
+    gnCheckConfig('debug', env)
   }
 }]
 
@@ -234,8 +235,9 @@ async function findFiles (args, linter) {
 async function main () {
   const opts = parseCommandLine()
 
-  // no mode specified? run 'em all
-  if (!opts['c++'] && !opts.javascript && !opts.python && !opts['gn-format']) {
+  // no mode specified? run 'em all excpet gn-check,
+  // since it requires complete src/ checkout.
+  if (!opts['c++'] && !opts.javascript && !opts.python && !opts['gn-check'] && !opts['gn-format']) {
     opts['c++'] = opts.javascript = opts.python = opts['gn-format'] = true
   }
 
