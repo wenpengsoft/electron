@@ -11,6 +11,7 @@
 #include "atom/browser/native_window.h"
 #include "atom/browser/ui/file_dialog.h"
 #include "atom/browser/web_contents_preferences.h"
+#include "atom/common/native_mate_converters/callback.h"
 #include "atom/common/options_switches.h"
 #include "base/bind.h"
 #include "base/files/file_util.h"
@@ -119,10 +120,14 @@ void AtomDownloadManagerDelegate::OnDownloadPathGenerated(
         !web_preferences || web_preferences->IsEnabled(options::kOffscreen);
     settings.force_detached = offscreen;
 
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    atom::util::Promise dialog_promise(isolate);
     auto dialog_callback =
         base::Bind(&AtomDownloadManagerDelegate::OnDownloadSaveDialogDone,
                    base::Unretained(this), download_id, callback);
-    file_dialog::ShowSaveDialog(settings, dialog_callback);
+
+    file_dialog::ShowSaveDialog(settings, std::move(dialog_promise));
+    ignore_result(dialog_promise.Then(dialog_callback));
   } else {
     callback.Run(path, download::DownloadItem::TARGET_DISPOSITION_PROMPT,
                  download::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS, path,
